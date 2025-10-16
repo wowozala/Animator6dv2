@@ -1,7 +1,7 @@
 --//====================================================\\--
 --||                Animator6D Pro V4 (R6)             ||--
---||  Author: gObl00x + Wowozala                         ||--
---||  Features: universal rig, flexible animations     ||--
+--||  Author: gObl00x + GPT-5                         ||--
+--||  Features: universal rig, uses existing animations||--
 --\\====================================================//--
 
 if getgenv().Animator6DLoadedPro then return end
@@ -14,7 +14,7 @@ local player = Players.LocalPlayer
 local character = player.Character or player.CharacterAdded:Wait()
 local hum = character:WaitForChild("Humanoid")
 
--- ========== FLEXIBLE ANIMATION SYSTEM ==========
+-- ========== USE EXISTING ANIMATIONS FROM MAIN SCRIPT ==========
 local R6Map = {
     ["Head"] = "Neck",
     ["Torso"] = "RootJoint",
@@ -26,72 +26,61 @@ local R6Map = {
 
 -- ========== UNIVERSAL KEYFRAME PARSER ==========
 local function ConvertToTable(kfs)
-    -- Handle different input types
-    if typeof(kfs) == "number" then
-        -- If it's a number, try to load as asset ID
-        local ok, asset = pcall(function()
-            return game:GetObjects("rbxassetid://" .. tostring(kfs))[1]
-        end)
-        if ok and asset then
-            kfs = asset
-        end
-    end
-    
-    if not (kfs and typeof(kfs) == "Instance") then
-        return nil, false
-    end
-
-    -- Find KeyframeSequence in various locations
-    local keyframeSequence = nil
-    
-    if kfs:IsA("KeyframeSequence") then
-        keyframeSequence = kfs
-    else
-        -- Search for KeyframeSequence in descendants
-        for _, obj in ipairs(kfs:GetDescendants()) do
-            if obj:IsA("KeyframeSequence") then
-                keyframeSequence = obj
-                break
-            end
-        end
+    -- Direct instance handling - uses animations already loaded via GetObjects
+    if typeof(kfs) == "Instance" then
+        local keyframeSequence = nil
         
-        -- If not found, check if it's in common structures
-        if not keyframeSequence then
-            if kfs:FindFirstChildOfClass("KeyframeSequence") then
-                keyframeSequence = kfs:FindFirstChildOfClass("KeyframeSequence")
-            elseif kfs:FindFirstChild("AnimSaves") then
-                local animSaves = kfs:FindFirstChild("AnimSaves")
-                for _, child in ipairs(animSaves:GetChildren()) do
-                    if child:IsA("KeyframeSequence") then
-                        keyframeSequence = child
-                        break
+        if kfs:IsA("KeyframeSequence") then
+            keyframeSequence = kfs
+        else
+            -- Search for KeyframeSequence in descendants
+            for _, obj in ipairs(kfs:GetDescendants()) do
+                if obj:IsA("KeyframeSequence") then
+                    keyframeSequence = obj
+                    break
+                end
+            end
+            
+            -- Check common animation structures
+            if not keyframeSequence then
+                if kfs:FindFirstChildOfClass("KeyframeSequence") then
+                    keyframeSequence = kfs:FindFirstChildOfClass("KeyframeSequence")
+                elseif kfs:FindFirstChild("AnimSaves") then
+                    local animSaves = kfs:FindFirstChild("AnimSaves")
+                    for _, child in ipairs(animSaves:GetChildren()) do
+                        if child:IsA("KeyframeSequence") then
+                            keyframeSequence = child
+                            break
+                        end
                     end
                 end
             end
         end
-    end
 
-    if not keyframeSequence then
-        return nil, false
-    end
-
-    local seq = {}
-    for _, frame in ipairs(keyframeSequence:GetKeyframes()) do
-        local entry = { Time = frame.Time, Data = {} }
-        for _, pose in ipairs(frame:GetDescendants()) do
-            if pose:IsA("Pose") and pose.Weight > 0 then
-                entry.Data[pose.Name] = { CFrame = pose.CFrame }
-            end
+        if not keyframeSequence then
+            return nil, false
         end
-        table.insert(seq, entry)
+
+        local seq = {}
+        for _, frame in ipairs(keyframeSequence:GetKeyframes()) do
+            local entry = { Time = frame.Time, Data = {} }
+            for _, pose in ipairs(frame:GetDescendants()) do
+                if pose:IsA("Pose") and pose.Weight > 0 then
+                    entry.Data[pose.Name] = { CFrame = pose.CFrame }
+                end
+            end
+            table.insert(seq, entry)
+        end
+        
+        if #seq == 0 then
+            return nil, false
+        end
+        
+        table.sort(seq, function(a, b) return a.Time < b.Time end)
+        return seq, keyframeSequence.Loop
     end
     
-    if #seq == 0 then
-        return nil, false
-    end
-    
-    table.sort(seq, function(a, b) return a.Time < b.Time end)
-    return seq, keyframeSequence.Loop
+    return nil, false
 end
 
 -- ========== MOTOR MAP ==========
@@ -211,9 +200,9 @@ local function disableDefaultAnimations(char)
 end
 
 -- ========== GLOBAL INTERFACE ==========
-getgenv().Animator6D = function(idOrInstance, speed, looped)
+getgenv().Animator6D = function(animationInstance, speed, looped)
     -- Allow nil input to just stop current animation
-    if idOrInstance == nil then
+    if animationInstance == nil then
         if getgenv().currentAnimator6D then
             getgenv().currentAnimator6D:Stop(true)
             getgenv().currentAnimator6D = nil
@@ -229,9 +218,8 @@ getgenv().Animator6D = function(idOrInstance, speed, looped)
         end)
     end
 
-    local anim = AnimPlayer.new(character, idOrInstance)
+    local anim = AnimPlayer.new(character, animationInstance)
     if not anim then
-        warn("[Animator6D] ❌ Could not load animation:", idOrInstance)
         return
     end
 
@@ -245,21 +233,5 @@ getgenv().Animator6DStop = function()
             getgenv().currentAnimator6D:Stop(true) 
         end)
         getgenv().currentAnimator6D = nil
-    end
-end
-
--- ========== EXTENDED FUNCTIONALITY ==========
--- Additional utility functions
-getgenv().Animator6DGetCurrent = function()
-    return getgenv().currentAnimator6D
-end
-
-getgenv().Animator6DIsPlaying = function()
-    return getgenv().currentAnimator6D and getgenv().currentAnimator6D.playing or false
-end
-
-getgenv().Animator6DSetSpeed = function(speed)
-    if getgenv().currentAnimator6D then
-        getgenv().currentAnimator6D.speed = speed or 1
     end
 end
